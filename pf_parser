@@ -13,8 +13,8 @@ my $pf_flush = 0;
 my $dsn_success = 0;
 my $dsn_transient_fail = 0;
 my $dsn_perm_fail = 0;
-my ($msg,$date,$time,$server,$cmd,$pf_id,$line,$size,$first_seen,$status,$delay,$msg_id,$recipient,$sender,$nrcpt,$relay);
-my $csv_format = "'<|msg_id|>'|<|pf_id|>|<|server|>|<|first_seen|>|<|deleted_time|>|'<|sender|>'|'<|recipient|>'|<|nrcpt|>|<|size|>|<|delay|>|<|status|>|<|relay|>|<|dsn_success|>|<|dsn_transient_fail|>|<|dsn_perm_fail|>|<|pf_qmgr|>|<|pf_cleanup|>|<|pf_smtpd|>|<|pf_smtp|>|<|pf_bounce|>|<|pf_error|>|<|pf_flush|>";
+my ($msg,$date,$time,$server,$cmd,$pf_id,$line,$size,$first_seen,$status,$delay,$msg_id,$recipient,$sender,$nrcpt,$relay, $throughput, $helo);
+my $csv_format = "'<|msg_id|>'|<|pf_id|>|<|server|>|<|first_seen|>|<|deleted_time|>|'<|sender|>'|'<|recipient|>'|<|nrcpt|>|<|size|>|<|delay|>|<|status|>|<|relay|>|<|throughput|>|<|helo|>|<|dsn_success|>|<|dsn_transient_fail|>|<|dsn_perm_fail|>|<|pf_qmgr|>|<|pf_cleanup|>|<|pf_smtpd|>|<|pf_smtp|>|<|pf_bounce|>|<|pf_error|>|<|pf_flush|>";
 my $address = "all";
 my $debug;# ="true";
 
@@ -50,8 +50,13 @@ sub parse_line {
         if ( $_[0] =~ /^(\w\w\w\s{1,2}\d{1,2}) (\d\d:\d\d:\d\d) (.*) postfix\/(\w+)\[\d+\]: ([0-9A-Z]+): (.*)/ ) {
         ( $date, $time, $server, $cmd, $pf_id, $line ) = ( $1, $2, $3, $4, $5, $6 );
                 parse_postfix( $_ );
-        } else {
-                dbug("FAIL - $_");
+        } 
+		elsif ( $_[0] =~  /^(\w\w\w\s{1,2}\d{1,2}) (\d\d:\d\d:\d\d) (.*) postfix\/(\w+)\[\d+\]:.* queued as ([0-9A-Z]+).(.*)/) {
+		( $date, $time, $server, $cmd, $pf_id, $line ) = ( $1, $2, $3, $4, $5, $6 );
+                parse_postfix( $_ );
+		}
+		else {
+                dbug("FAIL Chomp regex - $_");
                 #TODO ERROR HANDLING
         }
 }
@@ -178,7 +183,15 @@ sub parse_smtpd {
             $msg->{$pf_id}->{client} = $1;
             dbug( "$pf_id got client=$1.\n" );
         }
-        $msg->{$pf_id}->{first_seen} = $time;
+		if ( $line =~ /helo=<([^>]+)>/ ) { 
+			$msg->{$pf_id}->{helo} = $1; 
+			dbug( "$pf_id got helo=$1.\n" );
+		}
+		elsif ( $line =~ /\[127.0.0.1\]/ && $msg->{$pf_id}->{helo} eq "") {
+			$msg->{$pf_id}->{helo} = $server;
+			dbug( "$pf_id helo was null $helo is $server \n" );
+		}
+			
     dbug( "$pf_id Got first_seen $time.\n" );
 
 }
@@ -205,37 +218,39 @@ sub parse_smtp {
         dbug( "$pf_id got status=$1.\n" );
     }
 
-        if ( $line =~ /dsn=2.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_success}++; dbug("$pf_id dsn_success + 1\n" ); }
-        elsif ($line =~ /dsn=4.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_transient_fail}++; dbug("$pf_id dsn_transient_fail + 1\n" ); }
-        elsif ($line =~ /dsn=5.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_perm_fail}++; dbug("$pf_id dsn_perm_fail + 1\n" ); }
-        else { dbug("NO DSN Capture");}
+	if ( $line =~ /dsn=2.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_success}++; dbug("$pf_id dsn_success + 1\n" ); }
+	elsif ($line =~ /dsn=4.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_transient_fail}++; dbug("$pf_id dsn_transient_fail + 1\n" ); }
+	elsif ($line =~ /dsn=5.\d+\.\d+/ ) { $msg->{$pf_id}->{dsn_perm_fail}++; dbug("$pf_id dsn_perm_fail + 1\n" ); }
+	else { dbug("NO DSN Capture");} 
 
 #    if ($line =~ /dsn=\[(\d\.\d\.\d)\]/i ) {
-#               print "DSN Triggered = $1";
-#               #if dsn = 2.x.x then dsn_success=1
-#               if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_success}++; dbug("$pf_id dsn_success + 1\n" );}
-#               #if dsn = 4.x.x then dsn_transient_fail=1
-#               if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_transient_fail}++; dbug("$pf_id dsn_transient_fail + 1\n" );}
-#               #if dsn = 5.x.x then dsn_perm_fail=1
-#               if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_perm_fail}++; dbug("$pf_id dsn_perm_fail + 1\n" );}
+#		print "DSN Triggered = $1";
+#		#if dsn = 2.x.x then dsn_success=1
+#		if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_success}++; dbug("$pf_id dsn_success + 1\n" );}
+#		#if dsn = 4.x.x then dsn_transient_fail=1
+#		if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_transient_fail}++; dbug("$pf_id dsn_transient_fail + 1\n" );}
+#		#if dsn = 5.x.x then dsn_perm_fail=1
+#		if ($1 =~ /2.\d\.\d/) { $msg->{$pf_id}->{dsn_perm_fail}++; dbug("$pf_id dsn_perm_fail + 1\n" );}
 #        #push @{ $msg->{$pf_id}->{dsn} }, $1;
-#               #dbug( "$pf_id got dsn=$1.\n" );
+#		#dbug( "$pf_id got dsn=$1.\n" );
 #    }
 
-    if ( $line =~ /relay=(.*)\[\d{1,3}.\d{1,3}\.\d{1,3}\.\d{1,3}\]/i && $line !~ /status=deferred/ ) {
+    if ( $line =~ /relay=(.*)\[\d{1,3}.\d{1,3}\.\d{1,3}\.\d{1,3}\]:/i && $line !~ /status=deferred/ ) {
         my $tmprelay = $1;
-                my $ext_relay = "external";
-                if ($tmprelay =~ /(localhost)/ ) {
-                        #push @{ $msg->{$pf_id}->{relay}  }, $1 if $line =~ /relay=(.*?), /;
-                        push @{ $msg->{$pf_id}->{relay} }, $1;
-                        dbug( "$pf_id got relay=$1.\n" );
-                }
-                else {
-                        #push @{ $msg->{$pf_id}->{relay}  }, $1 if $line =~ /relay=(.*?), /;
-                        push @{ $msg->{$pf_id}->{relay} }, $ext_relay;
-                        dbug( "$pf_id got relay=$ext_relay.\n" );
-                }
-
+		my $tmpthroughput = "local";
+		if ($tmprelay =~ /(localhost)/ ) {
+			#push @{ $msg->{$pf_id}->{relay}  }, $1 if $line =~ /relay=(.*?), /;
+			push @{ $msg->{$pf_id}->{relay} }, $1;
+			dbug( "$pf_id got relay=$1\n" );
+			$msg->{$pf_id}->{throughput} = $tmpthroughput;
+			dbug( "$pf_id local throughput $throughput\n" );
+		}
+		else {
+			#push @{ $msg->{$pf_id}->{relay}  }, $1 if $line =~ /relay=(.*?), /;
+			push @{ $msg->{$pf_id}->{relay} }, $1;
+			dbug( "$pf_id got relay=$1\n" );
+		}
+		
 
     }
 
@@ -255,7 +270,12 @@ sub parse_smtp {
         $msg->{$pf_id}->{first_seen} = $time;
         $msg->{$pf_id}->{deleted_time} = $time;
         #printmailinfo( $msg->{$pf_id} );
-    }
+    }#
+	if ( $line =~ /(\d+\.\d+ KB.sec)/ ) {
+			$throughput = $1;
+			$msg->{$pf_id}->{throughput} = $throughput;
+			dbug( "$pf_id got throughput $throughput \n" );
+	}
 }
 
 sub parse_bounce{
@@ -336,14 +356,15 @@ sub print_csv() {
 sub complete_record {
         my $return_val = 0;
         dbug("CHECKING: $msg->{$k}->{pf_id}");
-        if (defined($msg->{$k}->{msg_id})){dbug("msg_id DEFINED:        $msg->{$k}->{$msg_id}   ");} else {dbug("msg_id UNDEFINED"); $return_val++;}
+        if (defined($msg->{$k}->{msg_id}	)){dbug("msg_id DEFINED:    $msg->{$k}->{$msg_id}   ");} else {dbug("msg_id UNDEFINED"); $return_val++;}
         if (defined($msg->{$k}->{recipient} )){dbug("recipient DEFINED: $msg->{$k}->{$recipient}");}  else {dbug("recipient UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{nrcpt}     )){dbug("nrcpt DEFINED:             $msg->{$k}->{$nrcpt}    ")}   else {dbug("nrcpt UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{sender}    )){dbug("sender DEFINED:    $msg->{$k}->{$sender}   ")}   else {dbug("sender UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{status}    )){dbug("status DEFINED:    $msg->{$k}->{$status}   ")}   else {dbug("status UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{delay}     )){dbug("delay DEFINED:             $msg->{$k}->{$delay}    ")}   else {dbug("delay UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{msg_id}    )){dbug("msg_id DEFINED:    $msg->{$k}->{$msg_id}   ")}   else {dbug("msg_id UNDEFINED");$return_val++;}
-        if (defined($msg->{$k}->{relay}    )){dbug("relay DEFINED:    $msg->{$k}->{$relay}   ")}   else {dbug("relay UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{nrcpt}     )){dbug("nrcpt DEFINED:     $msg->{$k}->{$nrcpt}    ");}   else {dbug("nrcpt UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{sender}    )){dbug("sender DEFINED:    $msg->{$k}->{$sender}   ");}   else {dbug("sender UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{status}    )){dbug("status DEFINED:    $msg->{$k}->{$status}   ");}   else {dbug("status UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{delay}     )){dbug("delay DEFINED:     $msg->{$k}->{$delay}    ");}   else {dbug("delay UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{msg_id}    )){dbug("msg_id DEFINED:    $msg->{$k}->{$msg_id}   ");}   else {dbug("msg_id UNDEFINED");$return_val++;}
+        if (defined($msg->{$k}->{relay}    )){dbug("relay DEFINED:      $msg->{$k}->{$relay}   ");}   else {dbug("relay UNDEFINED");$return_val++;}
+		if (defined($msg->{$k}->{throughput})){dbug("throughput DEFINED:$msg->{$k}->{$relay}   ");}   else {dbug("throughput UNDEFINED");$return_val++;}
         if ($return_val eq 0) {
                 dbug("$k = COMPLETE RECORD");
                 return 'true';
