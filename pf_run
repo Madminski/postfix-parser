@@ -1,0 +1,23 @@
+#!/bin/bash
+
+chown madmin:madmin parse_wrapper.sh pf_parse
+chmod 777 parse_wrapper.sh pf_parse
+
+nohup ./parse_wrapper.sh maillog_list_0.txt > /tmp/pf_wrapper_log_0 & #each one uses a cpu core
+nohup ./parse_wrapper.sh maillog_list_1.txt > /tmp/pf_wrapper_log_1 &
+nohup ./parse_wrapper.sh maillog_list_2.txt > /tmp/pf_wrapper_log_2 &
+nohup ./parse_wrapper.sh maillog_list_3.txt > /tmp/pf_wrapper_log_3 &
+nohup ./parse_wrapper.sh maillog_list_4.txt > /tmp/pf_wrapper_log_4 &
+nohup ./parse_wrapper.sh maillog_list_5.txt > /tmp/pf_wrapper_log_5 &
+nohup ./parse_wrapper.sh maillog_list_6.txt > /tmp/pf_wrapper_log_6 &
+nohup ./parse_wrapper.sh maillog_list_7.txt > /tmp/pf_wrapper_log_7 &
+nohup ./parse_wrapper.sh maillog_list_8.txt > /tmp/pf_wrapper_log_8 &
+nohup ./parse_wrapper.sh maillog_list_9.txt > /tmp/pf_wrapper_log_9 &
+nohup ./parse_wrapper.sh maillog_list_10.txt > /tmp/pf_wrapper_log_10 &
+nohup ./parse_wrapper.sh maillog_list_11.txt > /tmp/pf_wrapper_log_11 &
+nohup ./parse_wrapper.sh maillog_list_12.txt > /tmp/pf_wrapper_log_12 &
+nohup ./parse_wrapper.sh maillog_list_13.txt > /tmp/pf_wrapper_log_13 &
+nohup ./parse_wrapper.sh maillog_list_14.txt > /tmp/pf_wrapper_log_14 &
+nohup ./parse_wrapper.sh maillog_list_15.txt > /tmp/pf_wrapper_log_15 &
+tail -f /tmp/pf_wrapper_* | tee /tmp/wrapper_overview
+
